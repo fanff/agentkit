@@ -11,6 +11,7 @@ from app.schemas.agent_schema import AgentAndToolsConfig
 from app.schemas.tool_schema import ToolConfig, ToolInputSchema
 from app.services.chat_agent.helpers.llm import get_llm
 from app.services.chat_agent.tools.ExtendedBaseTool import ExtendedBaseTool
+from app.utils.trace_decorator import ATracingCallBackHandler, instrument
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class BaseLLM(ExtendedBaseTool):
 
         raise NotImplementedError("BaseLLM does not support sync")
 
+    @instrument
     async def _arun(
         self,
         *args: Any,

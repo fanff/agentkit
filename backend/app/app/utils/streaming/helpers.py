@@ -5,9 +5,11 @@ from typing import Any, AsyncGenerator, Awaitable
 from app.schemas.streaming_schema import StreamingData
 from app.utils.exceptions.common_exceptions import AgentCancelledException
 from app.utils.streaming.callbacks.stream import AsyncIteratorCallbackHandler
+from opentelemetry import trace
 
 logger = logging.getLogger(__name__)
 
+tracer = trace.get_tracer(__name__)
 
 class StreamHandlerNoNewline(logging.StreamHandler):
     """Stream handler that does not add a newline."""
@@ -44,11 +46,13 @@ async def event_generator(
 ) -> AsyncGenerator[StreamingData, Any]:
     """Generate events from the callback handler."""
     ait = acallback.aiter()
-
+    span = tracer.start_span("response_stream")
     logger.info("Streaming response...")
     async for response in ait:
-        stream_logger.debug(response)
+        with trace.use_span(span):
+            stream_logger.debug(response)
         yield response
+
     stream_logger.info("\n")
 
 

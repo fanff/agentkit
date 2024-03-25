@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 import logging
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import openai
 from langchain.agents import BaseMultiActionAgent
@@ -23,10 +23,13 @@ from app.schemas.agent_schema import ActionPlan, ActionPlans
 from app.schemas.tool_schema import ToolInputSchema, UserSettings
 from app.services.chat_agent.helpers.run_helper import is_running
 from app.utils.exceptions.common_exceptions import AgentCancelledException
+from app.utils.trace_decorator import ATracingCallBackHandler
 
+
+from opentelemetry import trace
 logger = logging.getLogger(__name__)
-
-
+tracer = trace.get_tracer(__name__)
+    
 class SimpleRouterAgent(BaseMultiActionAgent):
     """Agent that, given input, decides what to do."""
 
@@ -105,7 +108,8 @@ class SimpleRouterAgent(BaseMultiActionAgent):
         retries = 0
         while self.action_plan is None:
             try:
-                full_output = await self.llm_chain.apredict(**kwargs)
+                with tracer.start_as_current_span('pick_action_plan'):
+                    full_output = await self.llm_chain.apredict(callbacks=[ATracingCallBackHandler()],**kwargs)
                 action_plan = ActionPlan(**self.action_plans.action_plans[full_output].dict())
                 self.action_plan = action_plan
                 logger.info(f"Action plan selected: {full_output}, {str(action_plan)}")
@@ -133,6 +137,7 @@ class SimpleRouterAgent(BaseMultiActionAgent):
             if len(intermediate_steps) > 0:
                 tool_input.intermediate_steps = {step[0].tool: step[1] for step in intermediate_steps}
             elif "memory" in next_actions and "chat_history" in kwargs:
+                logger.debug("memory if found in next_action ; and chart_history is given. using it in tool_input")
                 tool_input.chat_history = kwargs["chat_history"]
 
             tool_input_str = tool_input.json()  # pydantic v2: model_dump_json
@@ -146,6 +151,8 @@ class SimpleRouterAgent(BaseMultiActionAgent):
                 if a != "memory"
             ]
             return actions
+        
+        logger.debug("Router is done")
         # Router agent is done
         output = "\n\n".join([f"{step[0].tool}:\n{step[1]}" for step in intermediate_steps])
         return AgentFinish(

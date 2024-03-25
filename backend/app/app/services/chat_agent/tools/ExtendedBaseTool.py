@@ -2,7 +2,10 @@
 # mypy: disable-error-code="attr-defined"
 from __future__ import annotations
 
+import logging
 from typing import Any, List, Optional
+
+from opentelemetry import trace
 
 from langchain.base_language import BaseLanguageModel
 from langchain.callbacks.manager import AsyncCallbackManagerForToolRun, CallbackManagerForToolRun
@@ -12,6 +15,10 @@ from langchain.tools import BaseTool
 from app.schemas.agent_schema import AgentAndToolsConfig
 from app.schemas.tool_schema import ToolConfig
 from app.services.chat_agent.helpers.llm import get_llm, get_token_length
+from app.utils.trace_decorator import ATracingCallBackHandler, instrument
+
+logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 class ExtendedBaseTool(BaseTool):
@@ -101,6 +108,7 @@ class ExtendedBaseTool(BaseTool):
             else None,
         )
 
+    @instrument
     async def _agenerate_response(
         self,
         messages: List[BaseMessage],
@@ -110,14 +118,24 @@ class ExtendedBaseTool(BaseTool):
         """Generate a response asynchronously with the preferential llm."""
         if self.fast_llm_token_limit is None:
             raise ValueError("fast_llm_token_limit must be set in the config, current value `None`")
-        llm = (
-            self.fast_llm
-            if get_token_length("".join([m.content if isinstance(m.content, str) else "" for m in messages]))
-            < self.fast_llm_token_limit
-            and not discard_fast_llm
-            else self.llm
-        )
-        llm_response = await llm.agenerate([messages], callbacks=run_manager.get_child() if run_manager else None)
+        
+        strconcated = "".join([m.content if isinstance(m.content, str) else "" for m in messages])
+        input_token_count = get_token_length(strconcated)
+
+        logger.debug("counting %d in string input, %d token", len(strconcated),input_token_count)
+        
+        if input_token_count < self.fast_llm_token_limit and not discard_fast_llm:
+            logger.info("Picking fast_llm")
+            llm:BaseLanguageModel = self.fast_llm
+        else:
+            logger.info("Picking usual self.llm")
+            llm:BaseLanguageModel = self.llm
+
+        if run_manager:
+            callbacks = run_manager.get_child() 
+        else:
+            callbacks = None
+        llm_response = await llm.agenerate([messages], callbacks=callbacks)
         return llm_response.generations[0][0].text
 
     def _run(

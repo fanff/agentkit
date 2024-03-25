@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
+import logging
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Union, cast
 from uuid import UUID
 
@@ -14,7 +15,7 @@ from langchain.schema.messages import BaseMessage
 from app.schemas.streaming_schema import StreamingData, StreamingDataTypeEnum, StreamingSignalsEnum
 from app.utils.fastapi_globals import g
 
-
+logger = logging.getLogger(__name__)
 # pylint: disable=too-many-ancestors
 class AsyncIteratorCallbackHandler(AsyncCallbackHandler):
     """
@@ -60,6 +61,7 @@ class AsyncIteratorCallbackHandler(AsyncCallbackHandler):
         )
 
     async def on_llm_start(self, serialized: Dict[str, Any], prompts: List[str], **kwargs: Any) -> None:
+        logger.debug("on_llm_start catched by wrapper")
         if self.llm_cache_enabled:
             self.run_id_cached[str(kwargs.get("run_id"))] = True
 
@@ -95,6 +97,7 @@ class AsyncIteratorCallbackHandler(AsyncCallbackHandler):
 
         An 'llm_end' signal is queued along with metadata.
         """
+        logger.debug("on_llm_end catched.")
         query_context = g.query_context or {}
         if self.llm_cache_enabled and self.run_id_cached[str(kwargs.get("run_id"))]:
             for generation in response.generations:
@@ -228,6 +231,8 @@ class AsyncIteratorCallbackHandler(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         """Run on agent end."""
+
+        logger.debug("on_agent_finish catch .")
         self.queue.put_nowait(
             StreamingData(
                 data=StreamingSignalsEnum.END.value,
@@ -242,6 +247,7 @@ class AsyncIteratorCallbackHandler(AsyncCallbackHandler):
         self,
     ) -> AsyncIterator[StreamingData]:
         """Allow streams to be stopped (e.g. on errors or cancelation) via done flag."""
+        logger.debug("aiter starting")
         while not self.queue.empty() or not self.done.is_set():
             # Wait for the next token in the queue,
             # but stop waiting if the done event is set

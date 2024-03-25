@@ -34,6 +34,9 @@ class Settings(BaseSettings):
         5,
     )
     ASYNC_DATABASE_URI: Optional[str] = None
+    
+    ENABLE_TRACE: Optional[bool] = False
+
 
     @validator(
         "ASYNC_DATABASE_URI",

@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+from functools import wraps
 import gc
 import logging
 from contextlib import asynccontextmanager
@@ -23,6 +24,7 @@ from app.api.v1.api import api_router as api_router_v1
 from app.core.config import settings, yaml_configs
 from app.core.fastapi import FastAPIWithInternalModels
 from app.utils.config_loader import load_agent_config, load_ingestion_configs
+from app.utils.config_logging import LogConfig
 from app.utils.fastapi_globals import GlobalsMiddleware, g
 
 
@@ -100,8 +102,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     gc.collect()
     yaml_configs.clear()
 
+from logging.config import dictConfig
+dictConfig(LogConfig().model_dump())
 
-logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Core Application Instance
 app = FastAPIWithInternalModels(
@@ -147,6 +151,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.get("/")
 async def root() -> Dict[str, str]:
     """An example "Hello world" FastAPI route."""
+    from opentelemetry import trace
+    tracer = trace.get_tracer(__name__)
+    with tracer.start_as_current_span('foo'):
+        import time
+        logger.debug("debug")
+        logger.info("info")
+        time.sleep(.1)
+
     return {"message": "FastAPI backend"}
 
 
@@ -156,3 +168,33 @@ app.include_router(
     prefix=settings.API_V1_STR,
 )
 add_pagination(app)
+
+
+if settings.ENABLE_TRACE:
+
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    FastAPIInstrumentor.instrument_app(app)
+
+
+    from opentelemetry import trace
+    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+    from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+    trace.set_tracer_provider(
+    TracerProvider(
+            resource=Resource.create({SERVICE_NAME: "agentkit"})
+        )
+    )
+    tracer = trace.get_tracer(__name__)
+
+    # create a JaegerExporter
+    jaeger_exporter = OTLPSpanExporter(endpoint="http://jaeger:4318/v1/traces")
+
+    # Create a BatchSpanProcessor and add the exporter to it
+    span_processor = BatchSpanProcessor(jaeger_exporter)
+
+    # add to the tracer
+    trace.get_tracer_provider().add_span_processor(span_processor)
+

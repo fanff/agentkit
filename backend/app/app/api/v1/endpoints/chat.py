@@ -17,9 +17,13 @@ from app.services.chat_agent.meta_agent import get_conv_token_buffer_memory
 from app.utils.streaming.callbacks.stream import AsyncIteratorCallbackHandler
 from app.utils.streaming.helpers import event_generator, handle_exceptions
 from app.utils.streaming.StreamingJsonListResponse import StreamingJsonListResponse
+from opentelemetry import trace
+
+from app.utils.trace_decorator import ATracingCallBackHandler
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 def get_meta_agent_with_api_key(
@@ -41,7 +45,9 @@ def get_meta_agent_with_api_key(
 async def run_status(
     run_id: str,
 ) -> bool:
-    return await is_running(run_id)
+    with tracer.start_as_current_span('is_running'):
+        result = await is_running(run_id)
+    return result
 
 
 @router.get("/run/{run_id}/cancel", response_model=bool)
@@ -74,37 +80,39 @@ async def agent_chat(
         StreamingResponse: The streaming response of the conversation.
     """
     logger.info(f"User JWT from request: {jwt}")
-
     api_key = chat.api_key
     if api_key is None or api_key == "":
         api_key = settings.OPENAI_API_KEY
 
-    chat_messages = [m.to_langchain() for m in chat.messages]
-    memory = get_conv_token_buffer_memory(
-        chat_messages[:-1],  # type: ignore
-        api_key,
-    )
-    stream_handler = AsyncIteratorCallbackHandler()
-    chat_content = chat_messages[-1].content if chat_messages[-1] is not None else ""
-    asyncio.create_task(
-        handle_exceptions(
-            meta_agent.arun(
-                input=chat_content,
-                chat_history=memory.load_memory_variables({})["chat_history"],
-                callbacks=[stream_handler],
-                user_settings=chat.settings,
-                tags=[
-                    "agent_chat",
-                    f"user_email={chat.user_email}",
-                    f"conversation_id={chat.conversation_id}",
-                    f"message_id={chat.new_message_id}",
-                    f"timestamp={datetime.now()}",
-                    f"version={chat.settings.version if chat.settings is not None else 'N/A'}",
-                ],
-            ),
-            stream_handler,
+    with tracer.start_as_current_span('chat_memory'):
+        chat_messages = [m.to_langchain() for m in chat.messages]
+        memory = get_conv_token_buffer_memory(
+            chat_messages[:-1],  # type: ignore
+            api_key,
         )
-    )
+    with tracer.start_as_current_span('task_create'):
+        stream_handler = AsyncIteratorCallbackHandler()
+        tracking_handler = ATracingCallBackHandler()
+        chat_content = chat_messages[-1].content if chat_messages[-1] is not None else ""
+        asyncio.create_task(
+            handle_exceptions(
+                meta_agent.arun(
+                    input=chat_content,
+                    chat_history=memory.load_memory_variables({})["chat_history"],
+                    callbacks=[stream_handler,tracking_handler],
+                    user_settings=chat.settings,
+                    tags=[
+                        "agent_chat",
+                        f"user_email={chat.user_email}",
+                        f"conversation_id={chat.conversation_id}",
+                        f"message_id={chat.new_message_id}",
+                        f"timestamp={datetime.now()}",
+                        f"version={chat.settings.version if chat.settings is not None else 'N/A'}",
+                    ],
+                ),
+                stream_handler,
+            )
+        )
 
     return StreamingJsonListResponse(
         event_generator(stream_handler),

@@ -1,6 +1,13 @@
 version: '3.8'
 
 services:
+  dozzle:
+    container_name: dozzle
+    image: amir20/dozzle:latest
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - 9999:8080
   fastapi_server:
     container_name: fastapi_server
     build: ./backend
@@ -11,7 +18,7 @@ services:
     #   - 5678:5678
     # Disable debug mode if only frontend development
     #command: "sh -c 'alembic upgrade head && python app/document_ingestion.py && uvicorn app.main:app --reload --workers 1 --host 0.0.0.0 --port 9090'"
-    command: "sh -c 'alembic upgrade head && uvicorn app.main:app --reload --workers 1 --host 0.0.0.0 --port 9090'"
+    command: "sh -c 'alembic upgrade head && uvicorn app.main:app --reload --workers 1 --host 0.0.0.0 --port 9090 --log-level debug'"
     volumes:
       - ./backend/app:/code
     ports:
@@ -51,6 +58,23 @@ services:
       - 6379
     env_file: .env
 
+  jaeger:
+    # https://www.jaegertracing.io/docs/1.55/deployment/
+    container_name: jaeger
+    image: jaegertracing/all-in-one:1.55
+    environment:
+      - COLLECTOR_ZIPKIN_HTTP_PORT=9411
+      - COLLECTOR_OTLP_ENABLED=true 
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686"
+      - "14268:14268"
+      - "9411:9411"
+      - "4317:4317" # oltp ports 
+      - "4318:4318" # oltp ports 
 volumes:
   langchain-db-data:
   langchain-redis-data:
