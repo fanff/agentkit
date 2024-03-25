@@ -53,16 +53,21 @@ For a quick setup of AgentKit, use the steps below, where both the backend app a
 On Windows PowerShell you can run for the demo :
 
 ```powershell
-function ddf { docker compose -f .\docker-compose-demo.yml @args }; New-Alias dd ddf
+function ddf { docker compose -f .\docker-compose-coding.yml @args }; New-Alias dd ddf
 ```
 
 Then you can simply use the shortcuts: 
+
 * `dd build` : rebuild the necessary docker images
 * `dd up -d` : spin-up the set of docker images and detach from execution (-d means background mode) 
 * `dd logs -f` : attatch to log streaming for all containers
 * `dd logs <containername> -f` : attatch to log streaming for a particular container
 * `dd down` : spin-down the set of docker images, add a `-v` to auto remove volumes & network
 
+Then you can combine them to efficiently rebuild and restart the app with:
+* `dd down -v ; dd build ; dd up -d` : Hard reset the app (when you change python dependencies for example)
+* `dd down -v ; dd up -d` : Medium reset the app (when you change var env for instance, or when your server completely crashed)
+* `dd restart` : Just restart the current container set
 
 
 ## Chinook music database demo

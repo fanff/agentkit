@@ -5,6 +5,8 @@ There are two additional setups available:
 
 2. Full local set-up: Use when you want to run both backend and frontend apps entirely locally without Docker. Suitable for local development without Docker, development on machines without Docker support, or quick prototyping.
 
+3. Agent Development set-up: Use when you want to run the agent locally and perform advanced debugging on it.
+
 ## Development set-up
 
 ### Prerequisites
@@ -121,6 +123,40 @@ Set up the .env files from the examples and change the database url in the .env 
 5. If you visit http://localhost:3000, you should be able to see the application!
 
 
+## Agent Development Setup
+
+This setup primarily rely on the `docker-compose-coding.yml` file. 
+
+
+### Prerequisites
+Before you begin, make sure you have the following installed on your machine:
+- Docker: Docker: https://www.docker.com/get-started
+
+### Installation Steps
+
+1. First make sure you have correct `.env` files, both in root and in the frontend folder. 
+2. Prepare an alias for your docker compose file 
+
+```powershell
+function ddf { docker compose -f .\docker-compose-coding.yml @args }; New-Alias dd ddf
+```
+
+```bash
+alias dd="docker compose -f docker-compose-coding.yml"
+```
+
+3. Download and build images with `dd pull ; dd build`
+
+4. Start the services with `dd up -d`
+
+Connect to the tools : 
+
+* `http://localhost:9090/api/v1/docs` : The FastAPI documentation
+* `http://localhost:9999/` : The logs of your application
+* `http://localhost:16686/` : The Tracing tool 
+
+
+
 ## (Optional) Pre-commit
 
 We are using pre-commit to automatically run some hygiene checks. Install this by running `make install-pre-commit`
@@ -142,3 +178,5 @@ Run the following commands to execute the tests:
 cd backend/app
 poetry run python3.10 -m pytest -c tests/pytest.ini
 ```
+
+
